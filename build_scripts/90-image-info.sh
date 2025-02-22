@@ -12,7 +12,7 @@ cat >$IMAGE_INFO <<EOF
   "image-ref": "${IMAGE_REF}",
   "image-flavor": "${IMAGE_FLAVOR}",
   "image-vendor": "${IMAGE_VENDOR}",
-  "image-tag": "${MAJOR_VERSION_NUMBER}",
+  "image-tag": "lts",
   "centos-version": "${MAJOR_VERSION_NUMBER}"
 }
 EOF
@@ -35,7 +35,7 @@ s/^VARIANT_ID=.*/VARIANT_ID=${IMAGE_NAME}/
 s/^PRETTY_NAME=.*/PRETTY_NAME=\"${IMAGE_PRETTY_NAME} (FROM $OLD_PRETTY_NAME)\"/
 s|^HOME_URL=.*|HOME_URL=\"${HOME_URL}\"|
 s|^BUG_REPORT_URL=.*|BUG_REPORT_URL=\"${BUG_SUPPORT_URL}\"|
-s|^CPE_NAME=\"cpe:/o:centos:centos|CPE_NAME=\"cpe:/o:universal-blue:${IMAGE_PRETTY_NAME,}|
+s|^CPE_NAME=\"cpe:/o:centos:centos|CPE_NAME=\"cpe:/o:universal-blue:bluefin-lts|
 
 /^REDHAT_BUGZILLA_PRODUCT=/d
 /^REDHAT_BUGZILLA_PRODUCT_VERSION=/d
@@ -46,6 +46,6 @@ EOF
 tee -a /usr/lib/os-release <<EOF
 DOCUMENTATION_URL="${DOCUMENTATION_URL}"
 SUPPORT_URL="${SUPPORT_URL}"
-DEFAULT_HOSTNAME="${IMAGE_PRETTY_NAME,,}"
+DEFAULT_HOSTNAME="bluefin"
 BUILD_ID="${SHA_HEAD_SHORT:-testing}"
 EOF
