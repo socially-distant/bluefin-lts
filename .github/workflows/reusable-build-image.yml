@@ -179,7 +179,7 @@ jobs:
       # using Cosign and save the private key as a repository secret in Github for this workflow
       # to consume. For more details, review the image signing section of the README.
       - name: Install Cosign
-        uses: sigstore/cosign-installer@c56c2d3e59e4281cc41dea2217323ba5694b171e # v3.8.0
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
         if: github.event_name != 'pull_request'
 
       - name: Sign Image
@@ -204,7 +204,7 @@ jobs:
 
       - name: Upload Output Artifacts
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4
         with:
           name: ${{ env.IMAGE_NAME }}-${{ matrix.platform }}
           retention-days: 1
@@ -220,7 +220,7 @@ jobs:
       - generate_matrix
       - build_push
     container:
-      image: quay.io/fedora/fedora:41@sha256:d9dfdcf7e507b6d5e1df8f569e8a164495ea6fbdc71f830af15c74a1f1bc56ce
+      image: quay.io/fedora/fedora:41@sha256:cfb2a2b340557999c8dc333ef10037bb5026888d524dac7bd6b06ccee4e95d56
       options: --privileged --security-opt seccomp=unconfined
     permissions:
       contents: read
@@ -389,7 +389,7 @@ jobs:
           echo ${{ secrets.GITHUB_TOKEN }} | podman login -u ${{ github.actor }} --password-stdin ghcr.io
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@c56c2d3e59e4281cc41dea2217323ba5694b171e # v3.8.0
+        uses: sigstore/cosign-installer@d7d6bc7722e3daa8354c50bcb52f4837da5e9b6a # v3.8.1
 
       - name: Sign Manifest
         run: |
