@@ -220,7 +220,7 @@ jobs:
       - generate_matrix
       - build_push
     container:
-      image: quay.io/fedora/fedora:41@sha256:db33a2caea01f3ec79a2802d557f5a3911f13712463d20ca6316cc99bba05ace
+      image: quay.io/fedora/fedora:41@sha256:c524b55bf67120185a82a5e0d85bacde52686e1ee5d574a85d8a7c473f5475b3
       options: --privileged --security-opt seccomp=unconfined
     permissions:
       contents: read
@@ -270,7 +270,7 @@ jobs:
           echo "CENTOS_VERSION_NUMBER=$numbers_only" >> $GITHUB_ENV
 
       - name: Image Metadata
-        uses: docker/metadata-action@369eb591f429131d6889c46b94e711f089e6ca96 # v5
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5
         id: metadata
         with:
           tags: |
@@ -301,7 +301,7 @@ jobs:
 
       - name: Fetch Build Outputs
         if: github.event_name != 'pull_request'
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4
         with:
           pattern: ${{ env.IMAGE_NAME }}-*
           merge-multiple: true
