@@ -35,7 +35,7 @@ exec /usr/bin/uname \$@
 EOF
 install -Dm0755 /tmp/fake-uname /tmp/bin/uname
 
-NVIDIA_DRIVER_VERSION="$(dnf repoquery --disablerepo="*" --enablerepo="epel-nvidia" --queryformat "%{VERSION}" kmod-nvidia --quiet)"
+NVIDIA_DRIVER_VERSION="$(rpm -q dkms-nvidia --queryformat="%{VERSION}")"
 PATH=/tmp/bin:$PATH dkms --force install -m nvidia -v $NVIDIA_DRIVER_VERSION -k "$QUALIFIED_KERNEL"
 cat "/var/lib/dkms/nvidia/$NVIDIA_DRIVER_VERSION/build/make.log" || echo "Expected failure"
 
@@ -47,8 +47,6 @@ EOF
 cat >/usr/lib/bootc/kargs.d/00-nvidia.toml <<EOF
 kargs = ["rd.driver.blacklist=nouveau", "modprobe.blacklist=nouveau", "nvidia-drm.modeset=1"]
 EOF
-
-dnf -y remove kernel-devel kernel-devel-matched kernel-headers dkms gcc-c++
 
 # Make sure initramfs is rebuilt after nvidia drivers or kernel replacement
 /usr/bin/dracut --no-hostonly --kver "$QUALIFIED_KERNEL" --reproducible --zstd -v -f
