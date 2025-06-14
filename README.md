@@ -1,3 +1,6 @@
+# Taking a nap
+The Bluefin team has decided to not pursue a GA release of Bluefin LTS at this time - this image will remain in Beta for the foreseeable future.
+
 # Bluefin LTS
 *Achillobator giganticus*
 

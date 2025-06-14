@@ -158,7 +158,7 @@ jobs:
       - name: Setup Syft
         id: setup-syft
         if: ${{ inputs.sbom && inputs.publish }}
-        uses: anchore/sbom-action/download-syft@e11c554f704a0b820cbf8c51673f6945e0731532 # v0
+        uses: anchore/sbom-action/download-syft@9246b90769f852b3a8921f330c59e0b3f439d6e9 # v0
 
       - name: Generate SBOM
         id: generate-sbom
@@ -318,7 +318,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          apk add jq git podman uutils bash conmon crun netavark fuse-overlayfs
+          apk add jq git podman uutils bash conmon crun netavark fuse-overlayfs libstdc++
           ln -sf /bin/bash /bin/sh
           mkdir -p /etc/containers
           echo '{"default":[{"type":"insecureAcceptAnything"}]}' | jq . > /etc/containers/policy.json
