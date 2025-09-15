@@ -3,7 +3,7 @@
 
 [![Build Bluefin LTS](https://github.com/socially-distant/bluefin-lts/actions/workflows/build-regular.yml/badge.svg)](https://github.com/socially-distant/bluefin-lts/actions/workflows/build-regular.yml)
 
-Larger, more lethal [Bluefin](https://projectbluefin.io). `bluefin:lts` is built on CentOS Stream10.
+Larger, more lethal [Bluefin](https://projectbluefin.io). `bluefin:lts` is built on CentOS Stream 10.
 
 ![image](https://github.com/user-attachments/assets/2e160934-44e6-4aee-b2b8-accb3bcf0a41)
 

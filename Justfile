@@ -87,16 +87,16 @@ sudoif command *args:
 # The script constructs the version string using the tag and the current date.
 # If the git working directory is clean, it also includes the short SHA of the current HEAD.
 #
-# just build $target_image $tag $dx $gdx
+# just build $target_image $tag $dx $gdx $hwe
 #
 # Example usage:
 #   just build bluefin lts 1 0 1
 #
-# This will build an image 'bluefin:lts' with DX and GDX enabled.
+# This will build an image 'bluefin:lts' with DX and HWE enabled.
 #
 
 # Build the image using the specified parameters
-build $target_image=image_name $tag=default_tag $dx="0" $gdx="0" $testing="0":
+build $target_image=image_name $tag=default_tag $dx="0" $gdx="0" $hwe="0":
     #!/usr/bin/env bash
 
     # Get Version
@@ -108,11 +108,16 @@ build $target_image=image_name $tag=default_tag $dx="0" $gdx="0" $testing="0":
     BUILD_ARGS+=("--build-arg" "IMAGE_VENDOR=${repo_organization}")
     BUILD_ARGS+=("--build-arg" "ENABLE_DX=${dx}")
     BUILD_ARGS+=("--build-arg" "ENABLE_GDX=${gdx}")
-    BUILD_ARGS+=("--build-arg" "ENABLE_TESTING=${testing}")
+    BUILD_ARGS+=("--build-arg" "ENABLE_HWE=${hwe}")
     if [[ -z "$(git status -s)" ]]; then
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
     fi
 
+    if [[ "$hwe" -eq "1" ]]; then
+        BUILD_ARGS+=("--build-arg" "KMODSIG=${hwe}")
+    fi
+
+    echo "Building image ${target_image}:${tag} with args: ${BUILD_ARGS[*]}"
     podman build \
         "${BUILD_ARGS[@]}" \
         --pull=newer \
@@ -136,7 +141,7 @@ build $target_image=image_name $tag=default_tag $dx="0" $gdx="0" $testing="0":
 # 3. If the image is found, load it into rootful podman using podman scp.
 # 4. If the image is not found, pull it from the remote repository into reootful podman.
 
-_rootful_load_image $target_image=image_name $tag=default_tag:
+rootful_load_image $target_image=image_name $tag=default_tag:
     #!/usr/bin/env bash
     set -eoux pipefail
 
@@ -175,7 +180,7 @@ _rootful_load_image $target_image=image_name $tag=default_tag:
 #   config: The configuration file to use for the build (default: image.toml)
 
 # Example: just _rebuild-bib localhost/fedora latest qcow2 image.toml
-_build-bib $target_image $tag $type $config: (_rootful_load_image target_image tag)
+_build-bib $target_image $tag $type $config:
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -195,7 +200,7 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
       args+=" --local"
     fi
 
-    sudo podman run \
+    just sudoif podman run \
       --rm \
       -it \
       --privileged \
@@ -275,13 +280,13 @@ _run-vm $target_image $tag $type $config:
     run_args+=(--pull=newer)
     run_args+=(--publish "127.0.0.1:${port}:8006")
     run_args+=(--env "CPU_CORES=4")
-    run_args+=(--env "RAM_SIZE=8G")
+    run_args+=(--env "RAM_SIZE=4G")
     run_args+=(--env "DISK_SIZE=64G")
     run_args+=(--env "TPM=Y")
     run_args+=(--env "GPU=Y")
     run_args+=(--device=/dev/kvm)
     run_args+=(--volume "${PWD}/${image_file}":"/boot.${type}")
-    run_args+=(docker.io/qemux/qemu-docker)
+    run_args+=(docker.io/qemux/qemu)
 
     # Run the VM and open the browser to connect
     podman run "${run_args[@]}" &

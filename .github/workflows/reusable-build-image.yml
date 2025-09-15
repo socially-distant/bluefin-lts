@@ -42,8 +42,8 @@ on:
         required: false
         type: boolean
         default: true
-      testing:
-        description: "Enable experimental things during builds, such as gnome backport. Will build an extra `-testing` tag."
+      hwe:
+        description: "Enable experimental things during builds, such as gnome backport. Will build an extra `-hwe` tag."
         required: false
         type: boolean
         default: false
@@ -76,7 +76,7 @@ jobs:
         id: set-matrix
         env:
           PLATFORMS: "${{ inputs.platforms }}"
-          ENABLE_TESTING: "${{ inputs.testing }}"
+          ENABLE_HWE: "${{ inputs.hwe }}"
         run: |
           # turn the comma separated string into a list
           platforms=()
@@ -112,13 +112,13 @@ jobs:
             podman
 
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
 
       - name: Maximize build space
         if: ${{ matrix.platform != 'arm64' && inputs.cleanup_runner }}
-        uses: ublue-os/remove-unwanted-software@cc0becac701cf642c8f0a6613bbdaf5dc36b259e # v9
+        uses: ublue-os/container-storage-action@main
         with:
-          remove-codeql: true
+          target-dir: /var/lib/containers
 
       - name: Setup Just
         uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
@@ -132,18 +132,18 @@ jobs:
         shell: bash
         env:
           FLAVOR: ${{ inputs.flavor }}
-          TESTING: ${{ inputs.testing }}
+          HWE: ${{ inputs.hwe }}
         run: |
           set -x
           just=$(which just)
 
-          ENABLE_TESTING=0
+          ENABLE_HWE=0
           ENABLE_GDX=0
           ENABLE_DX=0
-          if [[ "${TESTING}" == "true" ]] ; then
-            export DEFAULT_TAG="${DEFAULT_TAG}-testing"
+          if [[ "${HWE}" == "true" ]] ; then
+            export DEFAULT_TAG="${DEFAULT_TAG}-hwe"
             echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "${GITHUB_ENV}"
-            ENABLE_TESTING=1
+            ENABLE_HWE=1
           fi
           if [[ "${FLAVOR}" =~ "gdx" ]] ; then
             ENABLE_GDX=1
@@ -152,13 +152,13 @@ jobs:
             ENABLE_DX=1
           fi
 
-          sudo $just build "${IMAGE_NAME}" "${DEFAULT_TAG}" "${ENABLE_DX}" "${ENABLE_GDX}" "${ENABLE_TESTING}"
+          sudo $just build "${IMAGE_NAME}" "${DEFAULT_TAG}" "${ENABLE_DX}" "${ENABLE_GDX}" "${ENABLE_HWE}"
           echo "image_tag=${DEFAULT_TAG}" >> "${GITHUB_OUTPUT}"
 
       - name: Setup Syft
         id: setup-syft
         if: ${{ inputs.sbom && inputs.publish }}
-        uses: anchore/sbom-action/download-syft@e11c554f704a0b820cbf8c51673f6945e0731532 # v0
+        uses: anchore/sbom-action/download-syft@da167eac915b4e86f08b264dbdbc867b61be6f0c # v0
 
       - name: Generate SBOM
         id: generate-sbom
@@ -177,7 +177,7 @@ jobs:
       - name: Run Rechunker
         if: ${{ inputs.rechunk && inputs.publish }}
         id: rechunk
-        uses: hhd-dev/rechunk@ca77507401f8700bb0b25ebecbbf980a078cd180 # v1.2.2
+        uses: hhd-dev/rechunk@ded27feba22df48134eece2c66ba0fca1289ff40 # v1.2.3
         with:
           rechunk: ghcr.io/hhd-dev/rechunk:v1.2.1
           ref: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
@@ -222,6 +222,7 @@ jobs:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
           IMAGE_DIGEST: ${{ steps.load.outputs.digest }}
           PLATFORM: ${{ matrix.platform }}
+          HWE: ${{ inputs.hwe }}
           MAX_RETRIES: 3
         run: |
           set -x
@@ -233,7 +234,7 @@ jobs:
           echo "remote_image_digest=${REMOTE_IMAGE_DIGEST}" >> $GITHUB_OUTPUT
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
         if: ${{ inputs.publish }}
 
       - name: Sign Image
@@ -282,11 +283,11 @@ jobs:
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
           PLATFORM: ${{ matrix.platform }}
-          TESTING: ${{ inputs.testing }}
+          HWE: ${{ inputs.hwe }}
           DIGEST: ${{ steps.push.outputs.remote_image_digest }}
         run: |
           mkdir -p /tmp/outputs/digests
-          echo "${DIGEST}" > "/tmp/outputs/digests/${IMAGE_NAME}-${TESTING}-${PLATFORM}.txt"
+          echo "${DIGEST}" > "/tmp/outputs/digests/${IMAGE_NAME}-${HWE}-${PLATFORM}.txt"
 
       - name: Upload Output Artifacts
         if: ${{ inputs.publish }}
@@ -318,7 +319,7 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-          apk add jq git podman uutils bash conmon crun netavark fuse-overlayfs
+          apk add jq git podman uutils bash conmon crun netavark fuse-overlayfs libstdc++
           ln -sf /bin/bash /bin/sh
           mkdir -p /etc/containers
           echo '{"default":[{"type":"insecureAcceptAnything"}]}' | jq . > /etc/containers/policy.json
@@ -356,7 +357,7 @@ jobs:
           echo "CENTOS_VERSION_NUMBER=${numbers_only}" >> "${GITHUB_ENV}"
 
       - name: Image Metadata
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5
         id: metadata
         with:
           tags: |
@@ -368,8 +369,9 @@ jobs:
             type=raw,value=${{ env.CENTOS_VERSION_NUMBER }}.{{date 'YYYYMMDD'}}
             type=ref,event=pr
           flavor: |
-            ${{ inputs.testing && 'suffix=-testing' || '' }}
+            ${{ inputs.hwe && 'suffix=-hwe' || '' }}
           labels: |
+            bluefin.commit=${{ github.sha }}
             io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/refs/heads/main/README.md
             org.opencontainers.image.created=${{ steps.date.outputs.date }}
             org.opencontainers.image.description=${{ env.IMAGE_DESC }}
@@ -389,7 +391,7 @@ jobs:
 
       - name: Fetch Build Outputs
         if: ${{ inputs.publish }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           pattern: ${{ env.IMAGE_NAME }}-*
           merge-multiple: true
@@ -487,7 +489,7 @@ jobs:
           cat ${XDG_RUNTIME_DIR}/containers/auth.json > ~/.docker/config.json
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
 
       - name: Sign Manifest
         env:
