@@ -2,25 +2,28 @@
 
 set -xeuo pipefail
 
+ARCH=$(uname -m)
+
 # This is the base for a minimal GNOME system on CentOS Stream.
 
 # This thing slows down downloads A LOT for no reason
 dnf remove -y subscription-manager
+dnf -y install 'dnf-command(versionlock)'
 
-dnf -y install centos-release-hyperscale-kernel
-dnf config-manager --set-disabled "centos-hyperscale,centos-hyperscale-kernel"
-dnf --enablerepo="centos-hyperscale" --enablerepo="centos-hyperscale-kernel" -y update kernel
-
-if [ "${ENABLE_TESTING}" == "1" ] ; then
-	# GNOME 48 backport COPR
-	dnf copr enable -y "@centoshyperscale/c${MAJOR_VERSION_NUMBER}s-gnome-48"
-        dnf -y install glib2
-  dnf copr enable -y jreilly1821/packages
-        dnf -y install xdg-desktop-portal xdg-desktop-portal-gnome
-  dnf copr disable -y jreilly1821/packages
+# Kernel Swap on x86-64, for now, skip HWE as we don't have HWE kernels ready.
+if [[ "${ARCH}" == "x86_64" ]]; then
+  ./run/context/build_scripts/scripts/kernel-swap.sh
+else
+	echo "Skipping kernel swap for non-x86_64 architecture: ${ARCH}"
 fi
 
-dnf -y install 'dnf-command(versionlock)'
+# GNOME 48 backport COPR
+dnf copr enable -y "jreilly1821/c10s-gnome"
+dnf -y install glib2
+dnf -y upgrade glib2
+# Please, dont remove this as it will break everything GNOME related
+dnf versionlock add glib2
+
 # This fixes a lot of skew issues on GDX because kernel-devel wont update then
 dnf versionlock add kernel kernel-devel kernel-devel-matched kernel-core kernel-modules kernel-modules-core kernel-modules-extra kernel-uki-virt
 
@@ -57,6 +60,8 @@ dnf -y install \
 	-x PackageKit \
 	-x PackageKit-command-not-found \
 	-x gnome-software-fedora-langpacks \
+	-x gnome-extensions-app \
+	-x gnome-software \
 	"NetworkManager-adsl" \
 	"centos-backgrounds" \
 	"gdm" \
@@ -68,7 +73,6 @@ dnf -y install \
 	"gnome-session-wayland-session" \
 	"gnome-settings-daemon" \
 	"gnome-shell" \
-	"gnome-software" \
 	"gnome-user-docs" \
 	"gvfs-fuse" \
 	"gvfs-goa" \

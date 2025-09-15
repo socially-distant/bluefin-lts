@@ -12,11 +12,11 @@ sed -i 's/#SleepOperation=.*/SleepOperation=suspend-then-hibernate/g' /usr/lib/s
 systemctl enable brew-setup.service
 systemctl enable gdm.service
 systemctl enable fwupd.service
-systemctl enable rpm-ostree-countme.service
 systemctl --global enable podman-auto-update.timer
-systemctl enable rpm-ostree-countme.service
+systemctl enable ublue-countme.timer
 systemctl disable rpm-ostree.service
 systemctl enable dconf-update.service
+systemctl --global enable bazaar.service
 systemctl disable mcelog.service
 systemctl enable tailscaled.service
 systemctl enable uupd.timer
@@ -24,6 +24,7 @@ systemctl enable ublue-system-setup.service
 systemctl --global enable ublue-user-setup.service
 systemctl mask bootc-fetch-apply-updates.timer bootc-fetch-apply-updates.service
 systemctl enable check-sb-key.service
+systemctl disable sshd.service
 
 # Disable lastlog display on previous failed login in GDM (This makes logins slow)
 authselect enable-feature with-silent-lastlog
