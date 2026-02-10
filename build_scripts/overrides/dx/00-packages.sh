@@ -17,9 +17,6 @@ dnf -y --enablerepo docker-ce-stable install \
   docker-buildx-plugin \
   docker-compose-plugin
 
-dnf -y install \
-  podman-compose
-
 dnf -y --enablerepo copr:copr.fedorainfracloud.org:ublue-os:packages install \
   libvirt \
   libvirt-daemon-kvm \
