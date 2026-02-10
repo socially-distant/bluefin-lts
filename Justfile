@@ -3,6 +3,9 @@ export image_name := env("IMAGE_NAME", "bluefin")
 export centos_version := env("CENTOS_VERSION", "stream10")
 export default_tag := env("DEFAULT_TAG", "lts")
 export bib_image := env("BIB_IMAGE", "quay.io/centos-bootc/bootc-image-builder:latest")
+export coreos_stable_version := env("COREOS_STABLE_VERSION", "42")
+export common_image := env("COMMON_IMAGE", "ghcr.io/projectbluefin/common:latest")
+export brew_image := env("BREW_IMAGE", "ghcr.io/ublue-os/brew:latest")
 
 alias build-vm := build-qcow2
 alias rebuild-vm := rebuild-qcow2
@@ -95,26 +98,44 @@ sudoif command *args:
 # This will build an image 'bluefin:lts' with DX and HWE enabled.
 #
 
+[private]
+_ensure-yq:
+    #!/usr/bin/env bash
+    if ! command -v yq &> /dev/null; then
+        echo "Missing requirement: 'yq' is not installed."
+        echo "Please install yq (e.g. 'brew install yq')"
+        exit 1
+    fi
+
 # Build the image using the specified parameters
-build $target_image=image_name $tag=default_tag $dx="0" $gdx="0" $hwe="0":
+build $target_image=image_name $tag=default_tag $dx="0" $gdx="0" $hwe="0": _ensure-yq
     #!/usr/bin/env bash
 
     # Get Version
     ver="${tag}-${centos_version}.$(date +%Y%m%d)"
 
+    common_image_sha=$(yq -r '.images[] | select(.name == "common") | .digest' image-versions.yaml)
+    common_image_ref="${common_image}@${common_image_sha}"
+    brew_image_sha=$(yq -r '.images[] | select(.name == "brew") | .digest' image-versions.yaml)
+    brew_image_ref="${brew_image}@${brew_image_sha}"
+
     BUILD_ARGS=()
+    BUILD_ARGS+=("--build-arg" "COMMON_IMAGE_REF=${common_image_ref}")
+    BUILD_ARGS+=("--build-arg" "BREW_IMAGE_REF=${brew_image_ref}")
     BUILD_ARGS+=("--build-arg" "MAJOR_VERSION=${centos_version}")
     BUILD_ARGS+=("--build-arg" "IMAGE_NAME=${image_name}")
     BUILD_ARGS+=("--build-arg" "IMAGE_VENDOR=${repo_organization}")
     BUILD_ARGS+=("--build-arg" "ENABLE_DX=${dx}")
     BUILD_ARGS+=("--build-arg" "ENABLE_GDX=${gdx}")
     BUILD_ARGS+=("--build-arg" "ENABLE_HWE=${hwe}")
+    # Select akmods source tag for mounted ZFS/NVIDIA images
+    if [[ "${hwe}" -eq "1" || "${gdx}" -eq "1" ]]; then
+        BUILD_ARGS+=("--build-arg" "AKMODS_VERSION=coreos-stable-${coreos_stable_version}")
+    else
+        BUILD_ARGS+=("--build-arg" "AKMODS_VERSION=centos-10")
+    fi
     if [[ -z "$(git status -s)" ]]; then
         BUILD_ARGS+=("--build-arg" "SHA_HEAD_SHORT=$(git rev-parse --short HEAD)")
-    fi
-
-    if [[ "$hwe" -eq "1" ]]; then
-        BUILD_ARGS+=("--build-arg" "KMODSIG=${hwe}")
     fi
 
     echo "Building image ${target_image}:${tag} with args: ${BUILD_ARGS[*]}"
@@ -196,10 +217,6 @@ _build-bib $target_image $tag $type $config:
     args="--type ${type} "
     args+="--use-librepo=True"
 
-    if [[ $target_image == localhost/* ]]; then
-      args+=" --local"
-    fi
-
     just sudoif podman run \
       --rm \
       -it \
@@ -236,7 +253,48 @@ build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build
 
 # Build an ISO virtual machine image
 [group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "iso.toml")
+build-iso $target_image=("localhost/" + image_name) $tag=default_tag:
+    #!/usr/bin/env bash
+    set -eoux pipefail
+
+    # Determine Repo
+    REPO="local"
+    if [[ "{{ target_image }}" =~ ghcr.io ]]; then
+        REPO="ghcr"
+    fi
+
+    # Determine Variant
+    VARIANT="bluefin"
+    if [[ "{{ tag }}" =~ lts ]]; then
+        VARIANT="lts"
+    fi
+
+    # Determine Flavor
+    FLAVOR="base"
+    if [[ "{{ target_image }}" =~ -dx ]]; then
+        FLAVOR="dx"
+    fi
+    if [[ "{{ target_image }}" =~ -gdx ]]; then
+        FLAVOR="gdx"
+    fi
+
+    echo "Delegating to projectbluefin/iso..."
+    echo "Variant: $VARIANT"
+    echo "Flavor:  $FLAVOR"
+    echo "Repo:    $REPO"
+
+    # Clone and Build
+    BUILD_ROOT="_iso_build"
+    rm -rf "$BUILD_ROOT"
+    git clone https://github.com/projectbluefin/iso.git "$BUILD_ROOT"
+
+    pushd "$BUILD_ROOT"
+    just local-iso "$VARIANT" "$FLAVOR" "$REPO"
+    popd
+
+    # Copy Artifacts
+    mv "$BUILD_ROOT"/*.iso .
+    rm -rf "$BUILD_ROOT"
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -251,18 +309,25 @@ rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_reb
 rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "iso.toml")
 
 # Run a virtual machine with the specified image type and configuration
-_run-vm $target_image $tag $type $config:
+_run-vm $target_image $tag $type $config $iso_file="":
     #!/usr/bin/env bash
     set -eoux pipefail
 
     # Determine the image file based on the type
-    image_file="output/${type}/disk.${type}"
-    if [[ $type == iso ]]; then
+    if [[ -n "$iso_file" ]]; then
+        image_file="$iso_file"
+    elif [[ $type == iso ]]; then
         image_file="output/bootiso/install.iso"
+    else
+        image_file="output/${type}/disk.${type}"
     fi
 
-    # Build the image if it does not exist
+    # Build the image if it does not exist (skip if custom iso_file provided)
     if [[ ! -f "${image_file}" ]]; then
+        if [[ -n "$iso_file" ]]; then
+            echo "ISO not found at $iso_file. Please build it first or specify a valid ISO path."
+            exit 1
+        fi
         just "build-${type}" "$target_image" "$tag"
     fi
 
@@ -271,8 +336,8 @@ _run-vm $target_image $tag $type $config:
     while grep -q :${port} <<< $(ss -tunalp); do
         port=$(( port + 1 ))
     done
-    echo "Using Port: ${port}"
-    echo "Connect to http://localhost:${port}"
+    echo "Using Web Port: ${port}"
+    echo "Connect via Web: http://localhost:${port}"
 
     # Set up the arguments for running the VM
     run_args=()
@@ -285,13 +350,24 @@ _run-vm $target_image $tag $type $config:
     run_args+=(--env "TPM=Y")
     run_args+=(--env "GPU=Y")
     run_args+=(--device=/dev/kvm)
+
+    # Add SSH port forwarding for all VM types
+    ssh_port=$(( port + 1 ))
+    while grep -q :${ssh_port} <<< $(ss -tunalp); do
+        ssh_port=$(( ssh_port + 1 ))
+    done
+    echo "Using SSH Port: ${ssh_port}"
+    echo "Connect via SSH: ssh user@localhost -p ${ssh_port}"
+    run_args+=(--publish "127.0.0.1:${ssh_port}:22")
+    run_args+=(--env "USER_PORTS=22")
+    run_args+=(--env "NETWORK=user")
+
     run_args+=(--volume "${PWD}/${image_file}":"/boot.${type}")
-    run_args+=(docker.io/qemux/qemu)
+    run_args+=(ghcr.io/qemus/qemu)
 
     # Run the VM and open the browser to connect
-    podman run "${run_args[@]}" &
-    xdg-open http://localhost:${port}
-    fg "%podman"
+    (sleep 5 && xdg-open "http://localhost:${port}") &
+    podman run "${run_args[@]}"
 
 # Run a virtual machine from a QCOW2 image
 [group('Run Virtal Machine')]
@@ -303,80 +379,7 @@ run-vm-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-
 
 # Run a virtual machine from an ISO
 [group('Run Virtal Machine')]
-run-vm-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_run-vm target_image tag "iso" "iso.toml")
-
-# Run a virtual machine using systemd-vmspawn
-[group('Run Virtal Machine')]
-spawn-vm rebuild="0" type="qcow2" ram="6G":
-    #!/usr/bin/env bash
-
-    set -euo pipefail
-
-    [ "{{ rebuild }}" -eq 1 ] && echo "Rebuilding the ISO" && just build-vm {{ rebuild }} {{ type }}
-
-    systemd-vmspawn \
-      -M "achillobator" \
-      --console=gui \
-      --cpus=2 \
-      --ram=$(echo {{ ram }}| /usr/bin/numfmt --from=iec) \
-      --network-user-mode \
-      --vsock=false --pass-ssh-key=false \
-      -i ./output/**/*.{{ type }}
-
-##########################
-#  'customize-iso-build' #
-##########################
-# Description:
-# Enables the manual customization of the osbuild manifest before running the ISO build
-#
-# Mount the configuration file and output directory
-# Clear the entrypoint to run the custom command
-
-# Run osbuild with the specified parameters
-customize-iso-build:
-    sudo podman run \
-    --rm -it \
-    --privileged \
-    --pull=newer \
-    --net=host \
-    --security-opt label=type:unconfined_t \
-    -v $(pwd)/iso.toml \
-    -v $(pwd)/output:/output \
-    -v /var/lib/containers/storage:/var/lib/containers/storage \
-    --entrypoint "" \
-    "${bib_image}" \
-    osbuild --store /store --output-directory /output /output/manifest-iso.json --export bootiso
-
-##########################
-#  'patch-iso-branding'  #
-##########################
-# Description:
-# creates a custom branded ISO image. As per https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/anaconda_customization_guide/sect-iso-images#sect-product-img
-# Parameters:
-#   override: A flag to determine if the final ISO should replace the original ISO (default is 0).
-#   iso_path: The path to the original ISO file.
-# Runs a Podman container with Fedora image. Installs 'lorax' and 'mkksiso' tools inside the container. Creates a compressed 'product.img'
-# from the Brnading images in the 'iso_files' directory. Uses 'mkksiso' to add the 'product.img' to the original ISO and creates 'final.iso'
-# in the output directory. If 'override' is not 0, replaces the original ISO with the newly created 'final.iso'.
-
-# applies custom branding to an ISO image.
-patch-iso-branding override="0" iso_path="output/bootiso/install.iso":
-    #!/usr/bin/env bash
-    podman run \
-        --rm \
-        -it \
-        --pull=newer \
-        --privileged \
-        -v ./output:/output \
-        -v ./iso_files:/iso_files \
-        quay.io/centos/centos:stream10 \
-        bash -c 'dnf install -y lorax && \
-    	mkdir /images && cd /iso_files/product && find . | cpio -c -o | gzip -9cv > /images/product.img && cd / \
-            && mkksiso --add images --volid bluefin-boot /{{ iso_path }} /output/final.iso'
-
-    if [ {{ override }} -ne 0 ] ; then
-        mv output/final.iso {{ iso_path }}
-    fi
+run-vm-iso $iso_file="output/bootiso/install.iso": && (_run-vm "" "" "iso" "" iso_file)
 
 # Runs shell check on all Bash scripts
 lint:

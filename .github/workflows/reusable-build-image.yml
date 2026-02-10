@@ -53,6 +53,11 @@ on:
         type: boolean
         # default: ${{ github.event_name != 'pull_request' }}
         default: true
+      tag-suffix:
+        description: "The suffix to append to the image tag"
+        required: false
+        type: string
+        default: ""
     secrets:
       SIGNING_SECRET:
         description: "The private key used to sign the image"
@@ -62,7 +67,9 @@ env:
   IMAGE_NAME: ${{ inputs.image-name }}
   IMAGE_DESC: ${{ inputs.image-desc }}
   IMAGE_REGISTRY: "ghcr.io/${{ github.repository_owner }}"
-  DEFAULT_TAG: "lts"
+  DEFAULT_TAG: "lts" # DO NOT CHANGE! (this will break everything)
+  PRODUCTION_BRANCH: lts # This is the branch that everthing gets merged to at the end
+  TESTING_BRANCH: main # This is there the PRs go to :)
   CENTOS_VERSION: ${{ inputs.centos-version }}
   PLATFORMS: ${{ inputs.platforms }}
 
@@ -112,13 +119,9 @@ jobs:
             podman
 
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
-
-      - name: Maximize build space
-        if: ${{ matrix.platform != 'arm64' && inputs.cleanup_runner }}
-        uses: ublue-os/container-storage-action@main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          target-dir: /var/lib/containers
+          submodules: recursive
 
       - name: Setup Just
         uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3
@@ -133,6 +136,8 @@ jobs:
         env:
           FLAVOR: ${{ inputs.flavor }}
           HWE: ${{ inputs.hwe }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -x
           just=$(which just)
@@ -142,9 +147,15 @@ jobs:
           ENABLE_DX=0
           if [[ "${HWE}" == "true" ]] ; then
             export DEFAULT_TAG="${DEFAULT_TAG}-hwe"
-            echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "${GITHUB_ENV}"
             ENABLE_HWE=1
           fi
+
+          if [ "${REF_NAME}" != "${PRODUCTION_BRANCH}" ] && [ "$EVENT_NAME" == "pull_request" ] || [ "${EVENT_NAME}" == "merge_group" ] ; then
+            export TAG_SUFFIX="testing"
+            export DEFAULT_TAG="${DEFAULT_TAG}-${TAG_SUFFIX}"
+          fi
+
+          echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "${GITHUB_ENV}"
           if [[ "${FLAVOR}" =~ "gdx" ]] ; then
             ENABLE_GDX=1
           fi
@@ -158,7 +169,7 @@ jobs:
       - name: Setup Syft
         id: setup-syft
         if: ${{ inputs.sbom && inputs.publish }}
-        uses: anchore/sbom-action/download-syft@8e94d75ddd33f69f691467e42275782e4bfefe84 # v0
+        uses: anchore/sbom-action/download-syft@28d71544de8eaf1b958d335707167c5f783590ad # v0
 
       - name: Generate SBOM
         id: generate-sbom
@@ -177,9 +188,9 @@ jobs:
       - name: Run Rechunker
         if: ${{ inputs.rechunk && inputs.publish }}
         id: rechunk
-        uses: hhd-dev/rechunk@5fbe1d3a639615d2548d83bc888360de6267b1a2 # v1.2.4
+        uses: ublue-os/legacy-rechunk@a925083d9af7cb04b3e2a6e8c01bfa495f38b710 # v1.0.0
         with:
-          rechunk: ghcr.io/hhd-dev/rechunk:v1.2.1
+          rechunk: ghcr.io/ublue-os/legacy-rechunk:v1.0.1
           ref: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           prev-ref: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           skip_compression: true
@@ -291,7 +302,7 @@ jobs:
 
       - name: Upload Output Artifacts
         if: ${{ inputs.publish }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ env.IMAGE_NAME }}-${{ matrix.platform }}
           retention-days: 1
@@ -307,7 +318,7 @@ jobs:
       - generate_matrix
       - build_push
     container:
-      image:  cgr.dev/chainguard/wolfi-base:latest
+      image:  cgr.dev/chainguard/wolfi-base:latest@sha256:417d791afa234c538bca977fe0f44011d2381e60a9fde44c938bd17b9cc38f66
       options: --privileged --security-opt seccomp=unconfined
     permissions:
       contents: read
@@ -339,6 +350,25 @@ jobs:
             fi
           done
 
+      - name: Add suffixes to other variations as well
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          HWE: ${{ inputs.hwe }}
+        run: |
+          export CENTOS_VERSION_SUFFIX=""
+          if [[ "${HWE}" == "true" ]] ; then
+            export DEFAULT_TAG="${DEFAULT_TAG}-hwe"
+            export CENTOS_VERSION_SUFFIX="-hwe"
+          fi
+          if [ "${REF_NAME}" != "${PRODUCTION_BRANCH}" ] && [ "$EVENT_NAME" == "pull_request" ] || [ "${EVENT_NAME}" == "merge_group" ] ; then
+            export TAG_SUFFIX="testing"
+            export DEFAULT_TAG="${DEFAULT_TAG}-${TAG_SUFFIX}"
+            export CENTOS_VERSION_SUFFIX="-${TAG_SUFFIX}"
+          fi
+          echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "${GITHUB_ENV}"
+          echo "CENTOS_VERSION_SUFFIX=${CENTOS_VERSION_SUFFIX}" >> "${GITHUB_ENV}"
+
       - name: Get current date
         id: date
         run: |
@@ -357,19 +387,20 @@ jobs:
           echo "CENTOS_VERSION_NUMBER=${numbers_only}" >> "${GITHUB_ENV}"
 
       - name: Image Metadata
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         id: metadata
         with:
           tags: |
             type=raw,value=${{ env.DEFAULT_TAG }}
             type=raw,value=${{ env.DEFAULT_TAG }}.{{date 'YYYYMMDD'}}
-            type=raw,value=${{ env.CENTOS_VERSION }}
-            type=raw,value=${{ env.CENTOS_VERSION }}.{{date 'YYYYMMDD'}}
-            type=raw,value=${{ env.CENTOS_VERSION_NUMBER }}
-            type=raw,value=${{ env.CENTOS_VERSION_NUMBER }}.{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.DEFAULT_TAG }}-{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.CENTOS_VERSION }}${{ env.CENTOS_VERSION_SUFFIX }}${{ env.TAG_SUFFIX }}
+            type=raw,value=${{ env.CENTOS_VERSION }}${{ env.CENTOS_VERSION_SUFFIX }}${{ env.TAG_SUFFIX }}.{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.CENTOS_VERSION_NUMBER }}${{ env.CENTOS_VERSION_SUFFIX }}${{ env.TAG_SUFFIX }}
+            type=raw,value=${{ env.CENTOS_VERSION_NUMBER }}${{ env.CENTOS_VERSION_SUFFIX }}${{ env.TAG_SUFFIX }}.{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.CENTOS_VERSION }}${{ env.CENTOS_VERSION_SUFFIX }}${{ env.TAG_SUFFIX }}-{{date 'YYYYMMDD'}}
+            type=raw,value=${{ env.CENTOS_VERSION_NUMBER }}${{ env.CENTOS_VERSION_SUFFIX }}${{ env.TAG_SUFFIX }}-{{date 'YYYYMMDD'}}
             type=ref,event=pr
-          flavor: |
-            ${{ inputs.hwe && 'suffix=-hwe' || '' }}
           labels: |
             bluefin.commit=${{ github.sha }}
             io.artifacthub.package.readme-url=https://raw.githubusercontent.com/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}/refs/heads/main/README.md
@@ -391,7 +422,7 @@ jobs:
 
       - name: Fetch Build Outputs
         if: ${{ inputs.publish }}
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: ${{ env.IMAGE_NAME }}-*
           merge-multiple: true
