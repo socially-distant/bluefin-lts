@@ -15,7 +15,9 @@ dnf -y --enablerepo docker-ce-stable install \
   docker-model-plugin \
   containerd.io \
   docker-buildx-plugin \
+  podman-compose \
   docker-compose-plugin
+  
 
 dnf -y --enablerepo copr:copr.fedorainfracloud.org:ublue-os:packages install \
   libvirt \
