@@ -10,12 +10,7 @@ ARCH=$(uname -m)
 dnf remove -y subscription-manager
 dnf -y install 'dnf-command(versionlock)'
 
-# Kernel Swap on x86-64, for now, skip HWE as we don't have HWE kernels ready.
-if [[ "${ARCH}" == "x86_64" ]]; then
-  ./run/context/build_scripts/scripts/kernel-swap.sh
-else
-	echo "Skipping kernel swap for non-x86_64 architecture: ${ARCH}"
-fi
+/run/context/build_scripts/scripts/kernel-swap.sh
 
 # GNOME 48 backport COPR
 dnf copr enable -y "jreilly1821/c10s-gnome"
@@ -97,3 +92,10 @@ dnf -y install \
 
 # This package adds "[systemd] Failed Units: *" to the bashrc startup
 dnf -y remove console-login-helper-messages
+
+# We need to remove centos-logos before applying bluefin's logos and after installing this package. Do not remove this!
+rpm --erase --nodeps centos-logos
+# HACK: There currently is no generic-logos equivalent like on Fedora
+# We need this so packages like anaconda don't replace our logos by pulling in centos-logos again
+dnf -y install https://kojipkgs.fedoraproject.org//packages/generic-logos/18.0.0/26.fc43/noarch/generic-logos-18.0.0-26.fc43.noarch.rpm
+rpm --erase --nodeps --nodb generic-logos

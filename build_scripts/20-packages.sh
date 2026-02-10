@@ -7,23 +7,30 @@ dnf -y remove \
 
 dnf -y install \
 	-x gnome-extensions-app \
-	btrfs-progs \
-	buildah \
-	distrobox \
-	fastfetch \
-	fpaste \
-	fzf \
-	gnome-disk-utility \
-	gnome-shell-extension-{dash-to-dock,caffeine} \
-	glow \
-	gum \
-	hplip \
-	jetbrains-mono-fonts-all \
-	just \
 	NetworkManager-openconnect-gnome \
 	NetworkManager-openvpn-gnome \
+	btrfs-progs \
+	buildah \
+	containerd \
+	ddcutil \
+	distrobox \
+	fastfetch \
+	firewalld \
+	flatpak \
+	fpaste \
+	fzf \
+	glow \
+	gnome-disk-utility \
+	gum \
+	hplip \
+	ibus-chewing \
+	jetbrains-mono-fonts-all \
+	just \
+	libgda-sqlite \
 	nss-mdns \
 	ntfs-3g \
+	papers-thumbnailer \
+	pcsc-lite \
 	powertop \
 	rclone \
 	restic \
@@ -32,6 +39,7 @@ dnf -y install \
 	wireguard-tools \
 	wl-clipboard \
 	xhost
+rm -rf /usr/share/doc/just
 
 # Everything that depends on external repositories should be after this.
 # Make sure to set them as disabled and enable them only when you are going to use their packages.
@@ -43,33 +51,9 @@ dnf config-manager --set-disabled "tailscale-stable"
 dnf -y --enablerepo "tailscale-stable" install \
 	tailscale
 
-dnf -y copr enable ublue-os/packages
-dnf -y copr disable ublue-os/packages
-dnf -y --enablerepo copr:copr.fedorainfracloud.org:ublue-os:packages swap \
-	centos-logos bluefin-logos
-
-dnf -y --enablerepo copr:copr.fedorainfracloud.org:ublue-os:packages install \
-	-x bluefin-logos \
-	-x bluefin-readymade-config \
-	ublue-os-just \
-	ublue-os-luks \
-	ublue-os-signing \
-	ublue-os-udev-rules \
-	ublue-os-update-services \
-	ublue-{motd,fastfetch,bling,rebase-helper,setup-services,polkit-rules,brew} \
-	uupd \
-	bluefin-*
-
-# Upstream ublue-os-signing bug, we are using /usr/etc for the container signing and bootc gets mad at this
-# FIXME: remove this once https://github.com/ublue-os/packages/issues/245 is closed
-cp -avf /usr/etc/. /etc
-rm -rvf /usr/etc
-
-dnf -y copr enable ublue-os/staging
-dnf -y copr disable ublue-os/staging
-dnf -y --enablerepo copr:copr.fedorainfracloud.org:ublue-os:staging install \
-	-x gnome-extensions-app \
-	gnome-shell-extension-{appindicator,blur-my-shell,search-light,logo-menu,gsconnect}
+dnf -y copr enable ublue-os/packages 
+dnf -y copr disable ublue-os/packages 
+dnf -y --enablerepo copr:copr.fedorainfracloud.org:ublue-os:packages install uupd
 
 dnf -y copr enable che/nerd-fonts "centos-stream-${MAJOR_VERSION_NUMBER}-$(arch)"
 dnf -y copr disable che/nerd-fonts
@@ -82,3 +66,11 @@ dnf -y --enablerepo "copr:copr.fedorainfracloud.org:che:nerd-fonts" install \
 # We could get some kind of static binary for GCC but this is the cleanest and most tested alternative. This Sucks.
 dnf -y --setopt=install_weak_deps=False install gcc
 
+# Downgrade to GNOME 48 from jreilly1821/c10s-gnome-48 COPR
+# This pins us to gnome-shell 48.x instead of the upstream 49.x
+dnf -y copr enable jreilly1821/c10s-gnome-48
+dnf -y copr disable jreilly1821/c10s-gnome-48
+dnf -y --enablerepo copr:copr.fedorainfracloud.org:jreilly1821:c10s-gnome-48 swap gnome-shell gnome-shell-48.3 --allowerasing
+# Versionlock GNOME components to prevent upgrades back to 49
+dnf -y install python3-dnf-plugin-versionlock
+dnf versionlock add gnome-shell gdm gnome-session-wayland-session

@@ -4,3 +4,5 @@ rules:
     upstream: ublue-os:main
     mergeMethod: merge
     mergeUnstable: false
+    conflictReviewers:
+      - apoordev
