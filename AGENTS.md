@@ -53,7 +53,7 @@ Always reference these instructions first and fallback to search or bash command
 
 ### Key Build Variants
 - **Regular**: Basic Bluefin LTS (`just build bluefin lts 0 0 0`)
-- **DX**: Developer Experience with VSCode, Docker, development tools (`just build bluefin lts 1 0 0`)
+- **DX**: Developer Experience with development tools (`just build bluefin lts 1 0 0`)
 - **GDX**: GPU Developer Experience with CUDA, AI tools (`just build bluefin lts 0 1 0`)  
 - **HWE**: Hardware Enablement for newer hardware (`just build bluefin lts 0 0 1`)
 

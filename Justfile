@@ -82,7 +82,7 @@ sudoif command *args:
 #
 # DX:
 #   Developer Experience (DX) is a feature that allows you to install the latest developer tools for your system.
-#   Packages include VScode, Docker, Distrobox, and more.
+#   Packages include Distrobox, and more.
 # GDX: https://docs.projectbluefin.io/gdx/
 #   GPU Developer Experience (GDX) creates a base as an AI and Graphics platform.
 #   Installs Nvidia drivers, CUDA, and other tools.
